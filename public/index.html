@@ -6,6 +6,7 @@
 <title>MEGAMAX · Watch</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.13/dist/hls.min.js"></script>
 <style>
   :root{
     --bg:#0a0b0d; --panel:#111318; --panel-border:#1f232b;
@@ -78,7 +79,24 @@
     const modeTag = document.getElementById('mode-tag');
 
     if(state.videoUrl){
-      playerWrap.innerHTML = `<video src="${state.videoUrl}" controls autoplay loop playsinline></video>`;
+      const isHls = state.videoUrl.trim().toLowerCase().endsWith('.m3u8');
+      if(isHls){
+        playerWrap.innerHTML = `<video id="live-video" autoplay muted playsinline controls></video>`;
+        const video = document.getElementById('live-video');
+        if(video.canPlayType('application/vnd.apple.mpegurl')){
+          // Safari sabe reproducir HLS de forma nativa
+          video.src = state.videoUrl;
+        } else if(window.Hls && window.Hls.isSupported()){
+          // Resto de navegadores: usamos hls.js
+          const hls = new window.Hls({ liveSyncDuration: 3 });
+          hls.loadSource(state.videoUrl);
+          hls.attachMedia(video);
+        } else {
+          playerWrap.innerHTML = `<div id="player-placeholder">Tu navegador no puede reproducir este directo.</div>`;
+        }
+      } else {
+        playerWrap.innerHTML = `<video src="${state.videoUrl}" controls autoplay loop playsinline></video>`;
+      }
     } else {
       playerWrap.innerHTML = `<div id="player-placeholder">Sin contenido configurado todavía.</div>`;
     }
@@ -90,7 +108,7 @@
     if(state.chatChannel){
       chatCol.querySelector('.chat-head + *')?.remove();
       const iframe = document.createElement('iframe');
-      iframe.src = `https://kick.com/${state.chatChannel}/chatroom`;
+      iframe.src = `https://kick.com/popout/${state.chatChannel}/chat`;
       iframe.title = 'Chat';
       chatCol.appendChild(iframe);
     }
