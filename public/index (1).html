@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MEGAMAX · Watch</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.13/dist/hls.min.js"></script>
+<style>
+  :root{
+    --bg:#0a0b0d; --panel:#111318; --panel-border:#1f232b;
+    --accent:#53FC18; --text:#eef1f5; --text-dim:#8b93a1; --danger:#ff4d4d;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{ background:var(--bg); color:var(--text); font-family:'Inter',sans-serif; min-height:100vh; display:flex; flex-direction:column; }
+  header{ display:flex; align-items:center; justify-content:space-between; padding:14px 24px; border-bottom:1px solid var(--panel-border); }
+  .brand-mark{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:22px; letter-spacing:.04em; }
+  .brand-mark span{ color:var(--accent); }
+  .live-pill{ display:flex; align-items:center; gap:6px; background:rgba(255,77,77,.12); border:1px solid rgba(255,77,77,.35); color:var(--danger); font-family:'Rajdhani',sans-serif; font-weight:600; font-size:12px; letter-spacing:.08em; padding:4px 10px 4px 8px; border-radius:999px; }
+  .live-dot{ width:7px; height:7px; border-radius:50%; background:var(--danger); animation:pulse 1.4s ease-in-out infinite; }
+  @keyframes pulse{ 0%,100%{box-shadow:0 0 0 0 rgba(255,77,77,.55);} 50%{box-shadow:0 0 0 6px rgba(255,77,77,0);} }
+
+  main{ flex:1; display:flex; gap:1px; background:var(--panel-border); overflow:hidden; }
+  #player-col{ flex:1; display:flex; flex-direction:column; background:var(--bg); min-width:0; }
+  #player-wrap{ position:relative; width:100%; aspect-ratio:16/9; background:#000; }
+  #player-wrap video, #player-wrap iframe{ width:100%; height:100%; border:0; display:block; }
+  #player-placeholder{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:8px; color:var(--text-dim); font-size:14px; text-align:center; padding:20px; }
+
+  .controls-bar{ display:flex; align-items:center; gap:10px; padding:12px 20px; border-top:1px solid var(--panel-border); }
+  .mode-tag{ font-size:12px; padding:6px 12px; border-radius:999px; border:1px solid var(--panel-border); color:var(--text-dim); }
+  .mode-tag.active{ border-color:var(--accent); color:var(--accent); background:rgba(83,252,24,.08); }
+
+  #chat-col{ width:340px; background:var(--panel); display:flex; flex-direction:column; }
+  .chat-head{ padding:12px 16px; border-bottom:1px solid var(--panel-border); font-family:'Rajdhani',sans-serif; font-weight:600; font-size:14px; letter-spacing:.04em; color:var(--text-dim); }
+  #chat-col iframe{ flex:1; width:100%; border:0; }
+  #chat-empty{ flex:1; display:flex; align-items:center; justify-content:center; color:var(--text-dim); font-size:13px; padding:16px; text-align:center; }
+
+  @media (max-width:860px){ main{ flex-direction:column; } #chat-col{ width:100%; height:300px; } }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand-mark">MEGA<span>MAX</span></div>
+  <div class="live-pill"><span class="live-dot"></span>EN VIVO</div>
+</header>
+
+<main>
+  <div id="player-col">
+    <div id="player-wrap">
+      <div id="player-placeholder">Sin contenido configurado todavía.</div>
+    </div>
+    <div class="controls-bar">
+      <span class="mode-tag" id="mode-tag">Modo: LATAM</span>
+    </div>
+  </div>
+  <div id="chat-col">
+    <div class="chat-head">CHAT</div>
+    <div id="chat-empty">Chat no configurado.</div>
+  </div>
+</main>
+
+<script>
+  // Página de solo lectura: no hay ningún control para editar aquí.
+  // Todo lo que se muestra viene del backend, que solo el admin puede cambiar.
+  // Guardamos por separado lo último aplicado a vídeo y chat,
+  // así cada uno solo se reconstruye si ESE dato concreto cambia.
+  let lastVideoUrl = undefined;
+  let lastChatChannel = undefined;
+
+  async function loadState(){
+    try{
+      const res = await fetch('/api/state');
+      const state = await res.json();
+      renderState(state);
+    }catch(e){
+      console.error('No se pudo cargar el estado', e);
+    }
+  }
+
+  function renderState(state){
+    const playerWrap = document.getElementById('player-wrap');
+    const modeTag = document.getElementById('mode-tag');
+
+    if(state.videoUrl !== lastVideoUrl){
+      lastVideoUrl = state.videoUrl;
+
+      if(state.videoUrl){
+        const isHls = state.videoUrl.trim().toLowerCase().endsWith('.m3u8');
+        if(isHls){
+          playerWrap.innerHTML = `<video id="live-video" autoplay muted playsinline controls></video>`;
+          const video = document.getElementById('live-video');
+          if(video.canPlayType('application/vnd.apple.mpegurl')){
+            // Safari sabe reproducir HLS de forma nativa
+            video.src = state.videoUrl;
+          } else if(window.Hls && window.Hls.isSupported()){
+            // Resto de navegadores: usamos hls.js
+            const hls = new window.Hls({ liveSyncDuration: 3 });
+            hls.loadSource(state.videoUrl);
+            hls.attachMedia(video);
+          } else {
+            playerWrap.innerHTML = `<div id="player-placeholder">Tu navegador no puede reproducir este directo.</div>`;
+          }
+        } else {
+          playerWrap.innerHTML = `<video src="${state.videoUrl}" controls autoplay loop playsinline></video>`;
+        }
+      } else {
+        playerWrap.innerHTML = `<div id="player-placeholder">Sin contenido configurado todavía.</div>`;
+      }
+    }
+
+    modeTag.textContent = 'Modo: ' + (state.delayMode === 'reduced' ? 'Delay reducido' : 'LATAM');
+    modeTag.classList.add('active');
+
+    if(state.chatChannel !== lastChatChannel){
+      lastChatChannel = state.chatChannel;
+
+      const chatCol = document.getElementById('chat-col');
+      const existing = chatCol.querySelector('iframe, #chat-empty');
+      existing?.remove();
+
+      if(state.chatChannel){
+        const iframe = document.createElement('iframe');
+        iframe.src = `https://kick.com/popout/${state.chatChannel}/chat`;
+        iframe.title = 'Chat';
+        chatCol.appendChild(iframe);
+      } else {
+        const empty = document.createElement('div');
+        empty.id = 'chat-empty';
+        empty.textContent = 'Chat no configurado.';
+        chatCol.appendChild(empty);
+      }
+    }
+  }
+
+  loadState();
+  // Refresca cada 15s por si el admin cambia algo mientras alguien está viendo la página
+  setInterval(loadState, 15000);
+</script>
+
+</body>
+</html>
